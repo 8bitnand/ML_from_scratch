@@ -96,5 +96,5 @@ train_test_data, labels = data.train_test_split(data.load_data())
 # plot_fig(train_test_data["train"] )
 # plot_fig(train_test_data["test"], "test")
 
-knn = KNN(train_test_data, labels, k=5)
+knn = KNN(train_test_data, labels, k=6)
 knn.predict()
