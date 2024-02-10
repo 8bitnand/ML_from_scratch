@@ -1,58 +1,100 @@
-import os 
-from typing import List
-import matplotlib.pyplot as plt
- 
-def load_data(file):
-    data = []
-    with open(file) as f:
-        for line in f:
-            data.append(line.split(","))
+from typing import Any
+import matplotlib.pyplot as plt 
 
-    return data
+def plot_fig(data, mode="train"):
+    
+    cm = ["r", "g", "b", "y"]
+    
+    x = [x[0] for x in data ]
+    y = [x[1] for x in data ]
+    c = [cm[x[2]] for x in data ]
+
+    plt.scatter(x, y, c=c)
+    plt.savefig(f"KNN/{mode}_iris.png")
+    
     
 
-def process_data(data:List[List[str]]):
-    data_processed = []
-    labels = set()
-    for item in data:
-            data_processed.append(
-                [float(item[0]), float(item[1]), float(item[2]), float(item[3]), item[4].strip()]
-            )
-            labels.add(item[4].strip())
+class Data:
+    def __init__(self, irispath) -> None:
+        self.irispath = irispath
+
+    def load_data(self):
+        data = []
+        with open(self.irispath) as f:
+            for line in f:
+                f1, _,f2,_, label = line.split(",")
+                data.append((float(f1), float(f2), label.strip()))
+        
+        return data  
+        
+    def train_test_split(self, data):
+        
+        label_map = dict()
+        for item in data:
+            if item[-1] not in label_map:
+                label_map[item[-1]] = []
+                
+            label_map[item[-1]].append(item[:-1])
+        
+        train_test_data = {"train":[], "test": []}
+        label2index = {label: i for i, label in enumerate(label_map.keys())}
+        
+        for key in label_map:
+            for item in label_map[key][:-10]:
+                train_test_data["train"].append((*item, label2index[key]))
+                
+            for item in label_map[key][-10:]:
+                train_test_data["test"].append((*item, label2index[key]))
+        
+        return train_test_data , label2index
+
+
+class KNN:
+    def __init__(self, train_test_data, labels, k) -> None:
+        self.train = train_test_data["train"]
+        self.test = train_test_data["test"]
+        self.labels = labels
+        self.k = k 
     
-    return data_processed, list(labels)
+    def distance(self, test_dp):
+        
+        def Euclid_discance(p1, p2):
+            import math 
+            return math.sqrt( (p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 )
+            
+        d = []
+        for dp in self.train:
 
+            d.append((Euclid_discance(test_dp, dp), dp[-1]))
+       
+        return sorted(d, key=lambda x:x[0])
+           
+    def get_max_occurance(self, distance):
+        
+        hashmap = {}
+        
+        for item in distance:
+            if item[-1] not in hashmap:
+                hashmap[item[-1]] = 0
+                
+            hashmap[item[-1]] += 1
+                
+        return max(hashmap)
+            
+    def predict(self):
+        for x in self.test:
+            d = self.distance(x) 
+            print(x)
+            print(self.get_max_occurance(d[:self.k]))
+            print(x[-1])
+            print()
+            
 
-def save_plot(data_processed, labels):
+data = Data("KNN/iris.csv")   
+train_test_data, labels = data.train_test_split(data.load_data()) 
 
-    x = [ item[0] for item in data_processed ]
-    y = [ item[1] for item in data_processed ]
-    color = ["r","g", "b","y"]
-    color_map = {l:c for l,c in zip(labels, color)}
-    c = [color_map[item[-1]] for item in data_processed]
-    plt.scatter(x, y, color=c)
-    plt.savefig("KNN/iris_0_1.png")
+# plot_fig(train_test_data["train"] )
+# plot_fig(train_test_data["test"], "test")
 
-def train_test_split(data_processed, labels):
-    
-    data_on_labels = { label:[] for label in labels}
-
-    for item in data_processed:
-        data_on_labels[item[-1]].append(item[:-1])
-
-    train_test_data = { label: [] for label in labels }
-    for key in labels:
-        train_test_data[key].append({
-            'train': data_on_labels[key][:-10],
-            'test':data_on_labels[key][10:]
-        })
-
-    return train_test_data
-
-if __name__ == "__main__":
-
-    data = load_data("KNN/iris.csv")
-    data_processed, labels = process_data(data)
-    ttd = train_test_split(data_processed, labels)
-    print(ttd)
-    # save_plot(data_processed, labels)
+knn = KNN(train_test_data, labels, k=5)
+knn.predict()
