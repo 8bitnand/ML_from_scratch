@@ -2,10 +2,12 @@ import torch
 import torchvision
 import torch.nn as nn
 from typing import Tuple
-
+import math 
 
 class PatchEmbedding(nn.Module):
-    def __init__(self, img_size, in_chanels, hidden_dim, patch_size) -> None:
+    def __init__(
+        self, img_size: int, in_chanels: int, hidden_dim: int, patch_size: int
+    ) -> None:
         super().__init__()
 
         self.num_patches = (img_size // patch_size) ** 2
@@ -13,12 +15,12 @@ class PatchEmbedding(nn.Module):
             in_chanels, hidden_dim, kernel_size=patch_size, stride=patch_size
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
 
         x = self.liner_projection(
             x
         )  # b, in_channels, w, h -> b, hid_dim, num_patch, num_patch
-        x = x.flatten(2).trasnform(
+        x = x.flatten(2).transpose(
             1, 2
         )  # b, hid_dim, num_patch, num_patch -> b, num_patch*num_ptch, hid_dim
         return x
@@ -26,18 +28,20 @@ class PatchEmbedding(nn.Module):
 
 class Embedding(nn.Module):
 
-    def __init__(self, img_size, in_chanels, hidden_dim, patch_size, p) -> None:
+    def __init__(
+        self, img_size: int, in_chanels: int, hidden_dim: int, patch_size: int, p: float
+    ) -> None:
         super().__init__()
         self.patch_embedding = PatchEmbedding(
             img_size, in_chanels, hidden_dim, patch_size
         )
-        self.cls_token = nn.parameter(torch.randn(1, 1, hidden_dim))
+        self.cls_token = nn.Parameter(torch.randn(1, 1, hidden_dim))
         self.positional_embedings = nn.Parameter(
             torch.randn(1, self.patch_embedding.num_patches + 1, hidden_dim)
         )  # 1, num_patches + 1 , hidden_dim -> 1 for cls token
         self.dropout = nn.Dropout(p)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         x = self.patch_embedding(x)  # b, num_patches, hidden_dim
         bs = x.shape[0]
         # to concat cls token to patch embedings expand to bs, 1, hidden_dim
@@ -52,7 +56,9 @@ class Embedding(nn.Module):
 
 class AttentionHead(nn.Module):
 
-    def __init__(self, hidden_dim, attention_head_dim, p, bias=True) -> None:
+    def __init__(
+        self, hidden_dim: int, attention_head_dim: int, p: float, bias: bool = True
+    ) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
         self.attention_head_dim = attention_head_dim
@@ -61,10 +67,10 @@ class AttentionHead(nn.Module):
         self.v = nn.Linear(hidden_dim, attention_head_dim, bias=bias)
         self.dropout = nn.Dropout(p)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         q, k, v = self.q(x), self.k(x), self.v(x)
         # softmax(q*k'/sqrt(d)) * v
-        attention_score = torch.matmul(q, k.transpose(-1, -2)) / torch.sqrt(
+        attention_score = torch.matmul(q, k.transpose(-1, -2)) / math.sqrt(
             self.attention_head_dim
         )
         attention_prob = nn.functional.softmax(attention_score, dim=-1)
@@ -75,7 +81,9 @@ class AttentionHead(nn.Module):
 
 
 class MultiHead(nn.Module):
-    def __init__(self, hidden_dim, num_attention_heads, p, biase) -> None:
+    def __init__(
+        self, hidden_dim: int, num_attention_heads: int, p: float, biase: bool
+    ) -> None:
         super().__init__()
 
         attention_head_dim = hidden_dim // num_attention_heads
@@ -88,7 +96,7 @@ class MultiHead(nn.Module):
         self.output_projection = nn.Linear(all_head_dim, hidden_dim)
         self.dropout = nn.Dropout(p)
 
-    def forward(self, x, output_attenstion=False):
+    def forward(self, x: torch.Tensor, output_attenstion: bool = False):
 
         attention_outputs = [head(x) for head in self.heads]
         attention_output = torch.cat([ao for _, ao in attention_outputs], dim=-1)
@@ -103,32 +111,39 @@ class MultiHead(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, hidden_dim, interm_dim, p):
+    def __init__(self, hidden_dim: int, interm_dim: int, p: float):
         super().__init__()
         self.l1 = nn.Linear(hidden_dim, interm_dim)
         self.activation = nn.GELU()
         self.l2 = nn.Linear(interm_dim, hidden_dim)
         self.dropout = nn.Dropout(p)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         x = self.l1(x)
         x = self.activation(x)
         x = self.l2(x)
-        x = self.dropout()
+        x = self.dropout(x)
 
         return x
 
 
 class EncoderBlock(nn.Module):
 
-    def __init__(self, hidden_dim, num_attention_heads, interm_dim, p, biase):
+    def __init__(
+        self,
+        hidden_dim: int,
+        num_attention_heads: int,
+        interm_dim: int,
+        p: float,
+        biase: bool,
+    ):
         super().__init__()
         self.attention = MultiHead(hidden_dim, num_attention_heads, p, biase)
         self.layer_norm_1 = nn.LayerNorm(hidden_dim)
         self.mlp = MLP(hidden_dim, interm_dim, p)
         self.layer_norm_2 = nn.LayerNorm(hidden_dim)
 
-    def forward(self, x, output_attention=False):
+    def forward(self, x: torch.Tensor, output_attention=False):
 
         attention, attention_prob = self.attention(
             self.layer_norm_1(x), output_attention
@@ -145,7 +160,13 @@ class EncoderBlock(nn.Module):
 
 class Encoder(nn.Module):
     def __init__(
-        self, num_blocks, hidden_dim, num_attention_heads, interm_dim, p, biase
+        self,
+        num_blocks: int,
+        hidden_dim: int,
+        num_attention_heads: int,
+        interm_dim: int,
+        p: float,
+        biase: bool,
     ):
         super().__init__()
         self.encoder_blocks = nn.ModuleList([])
@@ -172,32 +193,33 @@ class ViT(nn.Module):
 
     def __init__(
         self,
-        num_channels,
-        img_size,
-        in_chanels,
-        hidden_dim,
-        patch_size,
-        num_blocks,
-        num_attention_heads,
-        interm_dim,
-        p,
-        biase,
+        num_classes: int,
+        img_size: int,
+        in_chanels: int,
+        hidden_dim: int,
+        patch_size: int,
+        num_blocks: int,
+        num_attention_heads: int,
+        interm_dim: int,
+        p: float,
+        biase: bool,
     ):
         super().__init__()
         self.embedings = Embedding(img_size, in_chanels, hidden_dim, patch_size, p)
         self.encoader = Encoder(
             num_blocks, hidden_dim, num_attention_heads, interm_dim, p, biase
         )
-        self.classifier = nn.Linear(hidden_dim, num_channels)
-        self.apply(self.__init_weights)
+        self.classifier = nn.Linear(hidden_dim, num_classes)
+        # self.apply(self._init_weights)
+        self.apply(self._init_weights)
 
-    def forward(self, x, output_attention=False):
+    def forward(self, x: torch.Tensor, output_attention=False):
 
         embedings = self.embedings(x)
         encoder_output, atttentions = self.encoader(embedings, output_attention)
         logits = self.classifier(encoder_output[:, 0])
 
         if not output_attention:
-            return logits, None 
+            return logits, None
         else:
             return logits, atttentions
